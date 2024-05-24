@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.20;
 
+// PUSH Comm Contract Interface
+interface IPUSHCommInterface {
+    function sendNotification(address _channel, address _recipient, bytes calldata _identity) external;
+}
+
 contract Escrow {
     /* Errors */
     error Escrow__Unauthorized(address expected, address actual);
@@ -52,6 +57,67 @@ contract Escrow {
         currentState = EscrowState.AWAITING_PAYMENT;
     }
 
+    // Helper function to convert address to string
+    function addressToString(address _address) internal pure returns (string memory) {
+        bytes32 _bytes = bytes32(uint256(uint160(_address)));
+        bytes memory HEX = "0123456789abcdef";
+        bytes memory _string = new bytes(42);
+        _string[0] = "0";
+        _string[1] = "x";
+        for (uint256 i = 0; i < 20; i++) {
+            _string[2 + i * 2] = HEX[uint8(_bytes[i + 12] >> 4)];
+            _string[3 + i * 2] = HEX[uint8(_bytes[i + 12] & 0x0f)];
+        }
+        return string(_string);
+    }
+
+    function uint2str(uint256 _i) internal pure returns (string memory) {
+        if (_i == 0) {
+            return "0";
+        }
+        uint256 j = _i;
+        uint256 len;
+        while (j != 0) {
+            len++;
+            j /= 10;
+        }
+        bytes memory bstr = new bytes(len);
+        uint256 k = len;
+        while (_i != 0) {
+            k = k - 1;
+            uint8 temp = (48 + uint8(_i - (_i / 10) * 10));
+            bytes1 b1 = bytes1(temp);
+            bstr[k] = b1;
+            _i /= 10;
+        }
+        return string(bstr);
+    }
+
+    function sendNotification() private {
+        IPUSHCommInterface(0x6e489B7af21cEb969f49A90E481274966ce9D74d).sendNotification(
+            0xD5eB12FD5B8d53f12A3ABde6B7fb43c6a7cde4A8, // from channel
+            0xD5eB12FD5B8d53f12A3ABde6B7fb43c6a7cde4A8, // to recipient
+            bytes(
+                string(
+                    abi.encodePacked(
+                        "0", // minimal identity
+                        "+", // segregator
+                        "1", // notification type
+                        "+", // segregator
+                        "Escrow Payment Successful", // notification title
+                        "+", // segregator
+                        "Escrow Transaction for Amount ",
+                        uint2str(price), // add the amount
+                        " between ",
+                        addressToString(buyer), // buyer address
+                        " and ",
+                        addressToString(seller) // seller address
+                    )
+                )
+            )
+        );
+    }
+
     function sendPayment() public payable onlyBuyer {
         if (currentState != EscrowState.AWAITING_PAYMENT) {
             revert Escrow__IncorrectState(EscrowState.AWAITING_PAYMENT, currentState);
@@ -69,6 +135,8 @@ contract Escrow {
         currentState = EscrowState.COMPLETE;
 
         emit Escrow_Transaction_Successful(buyer, seller, price);
+
+        sendNotification();
 
         (bool success,) = seller.call{value: price}("");
         if (!success) {
