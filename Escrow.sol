@@ -3,6 +3,7 @@ pragma solidity 0.8.20;
 
 contract Escrow {
     /* Errors */
+    error Escrow__Unauthorized(address expected, address actual);
 
     /* Interface */
 
